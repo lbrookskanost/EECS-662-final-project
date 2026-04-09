@@ -1,3 +1,5 @@
+{-# LANGUAGE GADTs,FlexibleContexts #-}
+{-# OPTIONS_GHC -Wno-missing-methods #-}
 {-
 boilerplate necessities
 T ::= int 
