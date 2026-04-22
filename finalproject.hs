@@ -85,12 +85,12 @@ instance Monad (Reader e) where
 
  -- Applicative Definition
 instance Applicative (Reader e) where
-pure x = Reader $ \e -> Just x
-(Reader f) <*> (Reader g) = Reader $ \e -> case f e of
-  Nothing -> Nothing
-  Just fx -> case g e of
+  pure x = Reader $ \e -> Just x
+  (Reader f) <*> (Reader g) = Reader $ \e -> case f e of
     Nothing -> Nothing
-    Just gx -> Just (fx gx)
+    Just fx -> case g e of
+      Nothing -> Nothing
+      Just gx -> Just (fx gx)
 
 -- Functor Definition
 instance Functor (Reader e) where
@@ -100,7 +100,7 @@ instance Functor (Reader e) where
 
 -- Fail Definition
 instance MonadFail (Reader e) where
-fail _ = Reader $ \_ -> Nothing
+  fail _ = Reader $ \_ -> Nothing
 
 -- Helper Methods
 runR :: Reader e a -> e -> Maybe a
@@ -116,41 +116,47 @@ useClosure :: String -> KULangVal -> EnvVal -> EnvVal -> EnvVal
 useClosure i v e _ = (i,v):e 
 
 --more boilerplate to edit; make sure these are actually CORRECT--
-evalStat :: EnvVal -> KULang -> (Maybe KULangVal)
-evalStat envV (Num x) = return (NumV x)
-evalStat envV Plus l r = do {(NumV l') <- (evalStat envV l);
-  (NumV r') <- (evalStat envV r);
-  return (NumV (l' + r'))}  
-evalStat envV Minus l r = do {(NumV l') <- (evalStat envV r);
-  (NumV r') <- (evalStat envV r);
-  return (NumV (l' + r'))}
-evalStat envV Mult l r = do {(NumV l') <- (evalStat envV l);
-  (NumV r') <- (evalStat envV r);
-  return (NumV (l' + r'))} 
-evalStat envV Div l r = do {(NumV l') <- (evalStat envV l); --this is probably fucked up
-  (NumV r') <- (evalStat envV r);
-  if r' == 0 then Nothing else (NumV (l' `div` r'))}  
-evalStat envV Exp b e = do {(NumV b') <- (evalStat envV b);
-  (NumV e') <- (evalStat envV e);
-  if e < 0 then Nothing else (NumV (b^e)}
-evalStat envV If0 c t e = do {(NumV c') <- (evalStat enc c);
-  if c' == 0 then (evalStat envV t) else (evalStat envV e)}
-evalStat envV Id id = do { v <- (lookup id envV);
-  return v}
-evalStat envV Lambda i b = return (ClosureV i b envV)
-evalStat envV App f a = do {(ClosureV i b e) <- (evalStat envV f);
-  a' <- (evalStat envV a);
-  evalStat ((i, a'):e)b } 
-
 elabTerm :: KULangExt -> KULang 
-elabTerm NumX x = (Num x)
-elabTerm PlusX l r = (Plus (elabTerm l) (elabTerm r))
-elabTerm MinusX l r = (Minus (elabTerm l) (elabTerm r))
-elabTerm MultX l r = (Mult (elabTerm l) (elabTerm r))
-elabTerm DivX l r = (Div (elabTerm l) (elabTerm r))
-elabTerm ExpX l r = (Div (elabTerm l) (elabTerm r))
-elabTerm If0X c t e = (If0 (elabTerm c) (elabTerm t) (elabTerm e))
-elabTerm LambdaX i b = (Lambda i (elabTerm b))
-elabTerm AppX f a = (App (elabTerm f) (elabTerm a)) 
-elabTerm BindX i v e = ((Lambda (i (elabTerm e))(elabTerm v)) --idfk what's going on here
-elabTerm IdX id = (Id id)
+elabTerm (NumX x) = (Num x)
+elabTerm (PlusX l r) = (Plus (elabTerm l) (elabTerm r))
+elabTerm (MinusX l r) = (Minus (elabTerm l) (elabTerm r))
+elabTerm (MultX l r) = (Mult (elabTerm l) (elabTerm r))
+elabTerm (DivX l r) = (Div (elabTerm l) (elabTerm r))
+elabTerm (ExpX b e) = (Exp (elabTerm b) (elabTerm e))
+elabTerm (If0X c t e) = (If0 (elabTerm c) (elabTerm t) (elabTerm e))
+elabTerm (LambdaX i b) = (Lambda i (elabTerm b))
+elabTerm (AppX f a) = (App (elabTerm f) (elabTerm a)) 
+elabTerm (BindX i v b) = App (Lambda i (elabTerm b))(elabTerm v) 
+elabTerm (IdX id) = (Id id)
+
+evalReader :: KULang -> Reader EnvVal KULangVal
+--this is static still
+--none require environments
+evalReader (Num x) = return (NumV x)
+evalReader (Plus l r) = do {(NumV l') <- (evalReader l);
+  (NumV r') <- (evalReader  r);
+  return (NumV (l' + r'))}  
+evalReader (Minus l r) = do {(NumV l') <- (evalReader l);
+  (NumV r') <- (evalReader  r);
+  return (NumV (l' - r'))}
+evalReader (Mult l r) = do {(NumV l') <- (evalReader  l);
+  (NumV r') <- (evalReader  r);
+  return (NumV (l' * r'))} 
+evalReader (Div l r) = do {(NumV l') <- (evalReader l); 
+  (NumV r') <- (evalReader  r);
+  if r' == 0 then fail "div by 0" else return (NumV (l' `div` r'))}  
+evalReader (Exp b e) = do {(NumV b') <- (evalReader  b);
+  (NumV e') <- (evalReader  e);
+  if e < 0 then fail "negative exponent" else return (NumV (b'^e')}
+evalReader (If0 c t e) = do {(NumV c') <- (evalReader c);
+  if c' == 0 then (evalReader  t) else (evalReader  e)}
+  
+evalReader (Id id) = do { env <- ask;
+  case (lookup id env) of
+    Just x -> return x
+    Nothing -> fail "unbound id"}
+evalReader (Lambda i b) = do { env <- ask;
+return (ClosureV i b env)}
+evalReader (App f a) = do {(ClosureV i b e) <- (evalReader f);
+  a' <- (evalReader a);
+  local (useClosure i a' e)(evalReader b) } 
