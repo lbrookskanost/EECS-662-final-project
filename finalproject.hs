@@ -12,7 +12,7 @@ T ::= int
     | T ^ T 
     | between T T T 
     | lambda (id:TY) in T 
-    | T T  --what is this??
+    | T T  --pairs
     | bind id T T 
     | if T then T else T 
     | T && T 
@@ -43,8 +43,8 @@ data KULang where
     Or :: KULang -> KULang -> KULang
     Leq :: KULang -> KULang -> KULang
     IsZero :: KULang -> KULang 
-    Id :: String -> KULang -- ?
-    App :: KULang -> KULang -> KULang -- ?
+    Id :: String -> KULang
+    App :: KULang -> KULang -> KULang
     deriving (Show,Eq)
 
 --Data Types--
@@ -114,3 +114,43 @@ local f r = Reader $ \e -> (runR r (f e))
 
 useClosure :: String -> KULangVal -> EnvVal -> EnvVal -> EnvVal
 useClosure i v e _ = (i,v):e 
+
+--more boilerplate to edit; make sure these are actually CORRECT--
+evalStat :: EnvVal -> KULang -> (Maybe KULangVal)
+evalStat envV (Num x) = return (NumV x)
+evalStat envV Plus l r = do {(NumV l') <- (evalStat envV l);
+  (NumV r') <- (evalStat envV r);
+  return (NumV (l' + r'))}  
+evalStat envV Minus l r = do {(NumV l') <- (evalStat envV r);
+  (NumV r') <- (evalStat envV r);
+  return (NumV (l' + r'))}
+evalStat envV Mult l r = do {(NumV l') <- (evalStat envV l);
+  (NumV r') <- (evalStat envV r);
+  return (NumV (l' + r'))} 
+evalStat envV Div l r = do {(NumV l') <- (evalStat envV l); --this is probably fucked up
+  (NumV r') <- (evalStat envV r);
+  if r' == 0 then Nothing else (NumV (l' `div` r'))}  
+evalStat envV Exp b e = do {(NumV b') <- (evalStat envV b);
+  (NumV e') <- (evalStat envV e);
+  if e < 0 then Nothing else (NumV (b^e)}
+evalStat envV If0 c t e = do {(NumV c') <- (evalStat enc c);
+  if c' == 0 then (evalStat envV t) else (evalStat envV e)}
+evalStat envV Id id = do { v <- (lookup id envV);
+  return v}
+evalStat envV Lambda i b = return (ClosureV i b envV)
+evalStat envV App f a = do {(ClosureV i b e) <- (evalStat envV f);
+  a' <- (evalStat envV a);
+  evalStat ((i, a'):e)b } 
+
+elabTerm :: KULangExt -> KULang 
+elabTerm NumX x = (Num x)
+elabTerm PlusX l r = (Plus (elabTerm l) (elabTerm r))
+elabTerm MinusX l r = (Minus (elabTerm l) (elabTerm r))
+elabTerm MultX l r = (Mult (elabTerm l) (elabTerm r))
+elabTerm DivX l r = (Div (elabTerm l) (elabTerm r))
+elabTerm ExpX l r = (Div (elabTerm l) (elabTerm r))
+elabTerm If0X c t e = (If0 (elabTerm c) (elabTerm t) (elabTerm e))
+elabTerm LambdaX i b = (Lambda i (elabTerm b))
+elabTerm AppX f a = (App (elabTerm f) (elabTerm a)) 
+elabTerm BindX i v e = ((Lambda (i (elabTerm e))(elabTerm v)) --idfk what's going on here
+elabTerm IdX id = (Id id)
