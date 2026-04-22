@@ -7,7 +7,7 @@ Add arrays:
 * array push (TODO)
 * array pop (TODO)
 
-Add binary numbers:
-* remove support for decimal numbers (TODO)
-* create parser for binary numbers (TODO)
-* add left shift, right shift, binary and, binary or operators (TODO)
+Add Python-style loops:
+* add for item in list loops (TODO)
+* add for item in range loops (TODO)
+* add while loops (TODO)
