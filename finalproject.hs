@@ -191,6 +191,7 @@ elab (LambdaX i t b) = (Lambda i t (elab b))
 elab (AppX f a) = (App (elab f) (elab a)) 
 elab (BindX i t v b) = App (Lambda i t (elab b))(elab v) 
 elab (IdX id) = (Id id)
+elab (LoopX cond var b) = (Fix (Lambda loop in (Lambda var in if (elab cond) then loop (var + 1) else var)))
 
 eval :: Cb -> Reader EnvVal CbVal
 eval (Num x) = return (NumV x)
