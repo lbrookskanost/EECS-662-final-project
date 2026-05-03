@@ -1,6 +1,6 @@
 Goals:  
-Add type inference (TODO)  
-Add strict evaluation (TODO)  
+Add type inference (DONE for boilerplate)  
+Add strict evaluation (DONE for boilerplate)  
 Add arrays:  
 * array data type (TODO)
 * array indexing (TODO)
