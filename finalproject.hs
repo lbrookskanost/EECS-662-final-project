@@ -4,6 +4,7 @@
 import Control.Monad
 
 --boilerplate necessities
+{-
 T ::= int 
     | bool 
     | id 
@@ -25,18 +26,18 @@ T ::= int
 TY ::= Num 
      | Boolean 
      | TY -> TY
-
+-}
 --Internal (may need to move some of these around) --
 data Cb where
     Num :: Int -> Cb  
-    Bool :: Boolean -> Cb
+    Bool :: Bool -> Cb
     Plus :: Cb -> Cb -> Cb 
     Minus :: Cb -> Cb -> Cb
     Mult :: Cb -> Cb -> Cb 
     Div :: Cb -> Cb -> Cb  
     Exp :: Cb -> Cb -> Cb
     Between :: Cb -> Cb -> Cb -> Cb 
-    Lambda :: String -> Cb -> Cb 
+    Lambda :: String -> CbTy -> Cb -> Cb 
     App :: Cb -> Cb -> Cb
     Id :: String -> Cb
     If :: Cb -> Cb -> Cb -> Cb
@@ -46,28 +47,42 @@ data Cb where
     IsZero :: Cb -> Cb 
     Fix :: Cb -> Cb
     deriving (Show,Eq)
+    
+data CbTy where
+  TNum :: CbTy
+  TBool :: CbTy
+  (:->:) :: CbTy -> CbTy -> CbTy
+  TClosure :: String -> CbTy -> Cont -> CbTy
+  deriving (Show,Eq)
 
 --Data Types--
 data CbVal where
     NumV :: Int -> CbVal
-    BoolV :: Bool -> CbVal
-    ClosureV :: String -> Cb -> EnvVal -> CbVal
+    BooleanV :: Bool -> CbVal
+    ClosureV :: String -> CbTy -> Cb -> EnvVal -> CbVal
     deriving (Show,Eq)
 
 --External--
 data CbExt where
-    NumX :: Int -> CbExt
-    PlusX :: CbExt -> CbExt -> CbExt
-    MinusX :: CbExt -> CbExt -> CbExt
-    MultX :: CbExt -> CbExt -> CbExt
-    DivX :: CbExt -> CbExt -> CbExt
-    ExpX :: CbExt -> CbExt -> CbExt
-    If0X :: CbExt -> CbExt -> CbExt -> CbExt
-    LambdaX :: String -> CbExt -> CbExt
-    AppX :: CbExt -> CbExt -> CbExt 
-    BindX :: String -> CbExt -> CbExt -> CbExt
-    IdX :: String -> CbExt
-    deriving (Show,Eq)
+  NumX :: Int -> CbExt
+  BooleanX :: Bool -> CbExt
+  IdX :: String -> CbExt  
+  PlusX :: CbExt -> CbExt -> CbExt
+  MinusX :: CbExt -> CbExt -> CbExt
+  MultX :: CbExt -> CbExt -> CbExt
+  DivX :: CbExt -> CbExt -> CbExt
+  ExpX :: CbExt -> CbExt -> CbExt
+  BetweenX :: CbExt -> CbExt -> CbExt -> CbExt
+  LambdaX :: String -> CbTy -> CbExt -> CbExt
+  AppX :: CbExt -> CbExt -> CbExt 
+  BindX :: String -> CbTy -> CbExt -> CbExt -> CbExt
+  IfX :: CbExt -> CbExt -> CbExt -> CbExt
+  AndX :: CbExt -> CbExt -> CbExt
+  OrX :: CbExt -> CbExt -> CbExt
+  LeqX :: CbExt -> CbExt -> CbExt
+  IsZeroX :: CbExt -> CbExt
+  FixX :: CbExt -> CbExt
+  deriving (Show,Eq)
 
 -- Environment Definitions
 type EnvVal = [(String, CbVal)]
@@ -85,7 +100,7 @@ runR (Reader f) e = f e
 local :: (e -> t) -> Reader t a -> Reader e a
 local f r = Reader $ \e -> runR r (f e)
 
-useClosure :: String -> KULangVal -> EnvVal -> EnvVal -> EnvVal
+useClosure :: String -> CbVal -> EnvVal -> EnvVal -> EnvVal
 useClosure i v e _ = (i,v):e
 
 instance Monad (Reader e) where
@@ -116,7 +131,7 @@ instance MonadFail (Reader e) where
 --more boilerplate to edit; make sure these are actually CORRECT--
 typeof :: Cb -> Reader Cont CbTy
 typeof (Num x) = return TNum
-typeof (Boolean x) = return TBool
+typeof (Bool x) = return TBool
 typeof (Id id) = do { cont <- ask;
   case lookup id cont of
     Just t -> return t
@@ -172,15 +187,14 @@ elab (MinusX l r) = (Minus (elab l) (elab r))
 elab (MultX l r) = (Mult (elab l) (elab r))
 elab (DivX l r) = (Div (elab l) (elab r))
 elab (ExpX b e) = (Exp (elab b) (elab e))
-elab (If0X c t e) = (If0 (elab c) (elab t) (elab e))
-elab (LambdaX i b) = (Lambda i (elab b))
+elab (LambdaX i t b) = (Lambda i t (elab b))
 elab (AppX f a) = (App (elab f) (elab a)) 
-elab (BindX i v b) = App (Lambda i (elab b))(elab v) 
+elab (BindX i t v b) = App (Lambda i t (elab b))(elab v) 
 elab (IdX id) = (Id id)
 
 eval :: Cb -> Reader EnvVal CbVal
 eval (Num x) = return (NumV x)
-eval (Boolean x) = return (BooleanV x)
+eval (Bool x) = return (BooleanV x)
 eval (Id id) = do { env <- ask;
   case (lookup id env) of
     Just x -> return x
