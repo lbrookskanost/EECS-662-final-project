@@ -84,6 +84,8 @@ data CbExt where
   LeqX :: CbExt -> CbExt -> CbExt
   IsZeroX :: CbExt -> CbExt
   FixX :: CbExt -> CbExt
+  WhileX :: CbExt -> CbExt -> CbExt
+  ForX :: CbExt -> CbExt -> CbExt -> CbExt -> CbExt
   deriving (Show,Eq)
 
 -- Environment Definitions
@@ -160,6 +162,7 @@ elab (AppX f a) = (App (elab f) (elab a))
 elab (BindX i t v b) = App (Lambda i t (elab b))(elab v) 
 elab (IdX id) = (Id id)
 elab (IfX c t e) = If (elab c) (elab t) (elab e)
+elab (WhileX cond body) = (While (elab cond) (elab body))
 --elab (LoopX cond var b) = (Fix (Lambda loop in (Lambda var in if (elab cond) then loop (var + 1) else var))) this is bullshit
 
 eval :: Cb -> ReaderT EnvVal (StateT Store Maybe) CbVal
