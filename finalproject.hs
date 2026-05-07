@@ -1,8 +1,8 @@
 {-# LANGUAGE GADTs,FlexibleContexts #-}
 {-# OPTIONS_GHC -Wno-missing-methods #-}
 
-import Control.Monad
-
+import Control.Monad.State
+import Control.Monad.Reader
 --boilerplate necessities
 {-
 T ::= int 
@@ -46,6 +46,7 @@ data Cb where
     Leq :: Cb -> Cb -> Cb
     IsZero :: Cb -> Cb 
     Fix :: Cb -> Cb
+    While :: Cb -> Cb -> Cb
     deriving (Show,Eq)
     
 data CbTy where
@@ -60,6 +61,7 @@ data CbVal where
     NumV :: Int -> CbVal
     BooleanV :: Bool -> CbVal
     ClosureV :: String -> CbTy -> Cb -> EnvVal -> CbVal
+    UnitV :: CbVal --dummy val
     deriving (Show,Eq)
 
 --External--
@@ -87,46 +89,11 @@ data CbExt where
 -- Environment Definitions
 type EnvVal = [(String, CbVal)]
 type Cont = [(String, CbTy)]
+type Store = [(Int, CbVal)] --maybe ...????
 
 -- Reader & Helper Methods (boilerplate from p5)
-data Reader e a = Reader (e -> Maybe a)
-
-ask :: Reader a a 
-ask = Reader $ \e -> Just e
-
-runR :: Reader e a -> e -> Maybe a
-runR (Reader f) e = f e 
-
-local :: (e -> t) -> Reader t a -> Reader e a
-local f r = Reader $ \e -> runR r (f e)
-
 useClosure :: String -> CbVal -> EnvVal -> EnvVal -> EnvVal
 useClosure i v e _ = (i,v):e
-
-instance Monad (Reader e) where
-    g >>= f = Reader $ \e -> 
-        case runR g e of
-      Nothing -> Nothing
-      Just v  -> runR (f v) e
-
-instance Functor (Reader e) where
-    fmap f (Reader g) = Reader $ \e ->
-        case g e of
-        Nothing -> Nothing
-        Just v  -> Just (f v)
-
-instance Applicative (Reader e) where
-    pure x = Reader $ \e -> Just x
-    (Reader f) <*> (Reader g) = Reader $ \e ->
-        case f e of
-      Nothing -> Nothing
-      Just h  ->
-        case g e of
-          Nothing -> Nothing
-          Just x  -> Just (h x)
-
-instance MonadFail (Reader e) where
-  fail _ = Reader $ \_ -> Nothing
 
 --more boilerplate to edit; make sure these are actually CORRECT--
 typeof :: Cb -> Reader Cont CbTy
@@ -182,6 +149,7 @@ typeof (Fix f) = do {(d :->: r) <- (typeof f);
   
 elab :: CbExt -> Cb 
 elab (NumX x) = (Num x)
+elab (BooleanX x) = Bool x
 elab (PlusX l r) = (Plus (elab l) (elab r))
 elab (MinusX l r) = (Minus (elab l) (elab r))
 elab (MultX l r) = (Mult (elab l) (elab r))
@@ -191,9 +159,10 @@ elab (LambdaX i t b) = (Lambda i t (elab b))
 elab (AppX f a) = (App (elab f) (elab a)) 
 elab (BindX i t v b) = App (Lambda i t (elab b))(elab v) 
 elab (IdX id) = (Id id)
-elab (LoopX cond var b) = (Fix (Lambda loop in (Lambda var in if (elab cond) then loop (var + 1) else var)))
+elab (IfX c t e) = If (elab c) (elab t) (elab e)
+--elab (LoopX cond var b) = (Fix (Lambda loop in (Lambda var in if (elab cond) then loop (var + 1) else var))) this is bullshit
 
-eval :: Cb -> Reader EnvVal CbVal
+eval :: Cb -> ReaderT EnvVal (StateT Store Maybe) CbVal
 eval (Num x) = return (NumV x)
 eval (Bool x) = return (BooleanV x)
 eval (Id id) = do { env <- ask;
@@ -231,7 +200,7 @@ eval (And l r) = do { (BooleanV l') <- (eval l);
   return (BooleanV (l' && r'))}
 eval (Or l r) = do { (BooleanV l') <- (eval l);
   (BooleanV r') <- (eval r);
-  return (BooleanV (l' || r'))} --is this how or works in haskell? no idea
+  return (BooleanV (l' || r'))}
 eval (IsZero x) = do { (NumV x') <- (eval x);
   return (BooleanV (x' == 0))}
 eval (Leq l r) = do {(NumV l') <- (eval l);
@@ -241,3 +210,11 @@ eval (Fix f) = do
   (ClosureV i t b e) <- (eval f)
   let fixVal = ClosureV i t b ((i, fixVal):e)
   local (const ((i, fixVal):e))(eval b)
+eval (While cond body) = do 
+  (BooleanV cond') <- eval cond
+  if cond' 
+    then do 
+      (eval body)
+      eval (While cond body) 
+    else return UnitV
+
