@@ -4,33 +4,12 @@
 import Control.Monad.State
 import Control.Monad.Reader
 --boilerplate necessities
-{-
-T ::= int 
-    | bool 
-    | id 
-    | T + T 
-    | T - T 
-    | T * T 
-    | T / T 
-    | T ^ T 
-    | between T T T 
-    | lambda (id:TY) in T 
-    | T T  
-    | if T then T else T 
-    | T && T 
-    | T || T 
-    | T <= T 
-    | isZero T 
-    | Fix T 
 
-TY ::= Num 
-     | Boolean 
-     | TY -> TY
--}
 --Internal (may need to move some of these around) --
 data Cb where
     Num :: Int -> Cb  
     Bool :: Bool -> Cb
+    Arr :: List -> Cb --not sure ab this
     Plus :: Cb -> Cb -> Cb 
     Minus :: Cb -> Cb -> Cb
     Mult :: Cb -> Cb -> Cb 
@@ -47,6 +26,7 @@ data Cb where
     IsZero :: Cb -> Cb 
     Fix :: Cb -> Cb
     While :: Cb -> Cb -> Cb
+    NewArr :: Cb -> Cb
     deriving (Show,Eq)
     
 data CbTy where
@@ -60,6 +40,7 @@ data CbTy where
 data CbVal where
     NumV :: Int -> CbVal
     BooleanV :: Bool -> CbVal
+    ArrV :: [CbVal] -> CbVal --think so
     ClosureV :: String -> CbTy -> Cb -> EnvVal -> CbVal
     UnitV :: CbVal --dummy val
     deriving (Show,Eq)
@@ -68,6 +49,7 @@ data CbVal where
 data CbExt where
   NumX :: Int -> CbExt
   BooleanX :: Bool -> CbExt
+  ArrX :: List -> CbExt
   IdX :: String -> CbExt  
   PlusX :: CbExt -> CbExt -> CbExt
   MinusX :: CbExt -> CbExt -> CbExt
@@ -85,7 +67,6 @@ data CbExt where
   IsZeroX :: CbExt -> CbExt
   FixX :: CbExt -> CbExt
   WhileX :: CbExt -> CbExt -> CbExt
-  ForX :: CbExt -> CbExt -> CbExt -> CbExt -> CbExt
   deriving (Show,Eq)
 
 -- Environment Definitions
@@ -101,6 +82,7 @@ useClosure i v e _ = (i,v):e
 typeof :: Cb -> Reader Cont CbTy
 typeof (Num x) = return TNum
 typeof (Bool x) = return TBool
+typeof (Arr xs) = return (typeof (head xs))
 typeof (Id id) = do { cont <- ask;
   case lookup id cont of
     Just t -> return t
@@ -148,6 +130,7 @@ typeof (Leq l r) = do {l' <- (typeof l);
   if (r' == TNum && l' == TNum) then return TBool else fail "type fail in leq"}
 typeof (Fix f) = do {(d :->: r) <- (typeof f);
   return r}
+typeof (While cond body) = fail "not implemented"
   
 elab :: CbExt -> Cb 
 elab (NumX x) = (Num x)
@@ -220,4 +203,8 @@ eval (While cond body) = do
       (eval body)
       eval (While cond body) 
     else return UnitV
+eval (NewArr arr) = 
+eval (AppendArr arr num idx) --possibly make this an extension
+eval (PopArr arr idx) --possibly make this an extension
+
 
