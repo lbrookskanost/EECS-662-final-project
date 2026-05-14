@@ -3,13 +3,11 @@
 
 import Control.Monad.State
 import Control.Monad.Reader
---boilerplate necessities
-
 --Internal (may need to move some of these around) --
 data Cb where
     Num :: Int -> Cb  
     Bool :: Bool -> Cb
-    Arr :: List -> Cb --not sure ab this
+    Arr :: [Cb] -> Cb --not sure ab this
     Plus :: Cb -> Cb -> Cb 
     Minus :: Cb -> Cb -> Cb
     Mult :: Cb -> Cb -> Cb 
@@ -27,20 +25,22 @@ data Cb where
     Fix :: Cb -> Cb
     While :: Cb -> Cb -> Cb
     NewArr :: Cb -> Cb
+    ArrSet :: Cb -> Cb -> Cb -> Cb
+    ArrIdx :: Cb -> Cb -> Cb
     deriving (Show,Eq)
     
 data CbTy where
   TNum :: CbTy
   TBool :: CbTy
   (:->:) :: CbTy -> CbTy -> CbTy
-  TClosure :: String -> CbTy -> Cont -> CbTy
+  TArr :: CbTy -> CbTy
   deriving (Show,Eq)
 
 --Data Types--
 data CbVal where
     NumV :: Int -> CbVal
     BooleanV :: Bool -> CbVal
-    ArrV :: [CbVal] -> CbVal --think so
+    ArrV :: Int -> Int -> CbVal --think so
     ClosureV :: String -> CbTy -> Cb -> EnvVal -> CbVal
     UnitV :: CbVal --dummy val
     deriving (Show,Eq)
@@ -49,7 +49,7 @@ data CbVal where
 data CbExt where
   NumX :: Int -> CbExt
   BooleanX :: Bool -> CbExt
-  ArrX :: List -> CbExt
+  ArrX :: [CbExt] -> CbExt
   IdX :: String -> CbExt  
   PlusX :: CbExt -> CbExt -> CbExt
   MinusX :: CbExt -> CbExt -> CbExt
@@ -67,6 +67,9 @@ data CbExt where
   IsZeroX :: CbExt -> CbExt
   FixX :: CbExt -> CbExt
   WhileX :: CbExt -> CbExt -> CbExt
+  NewArrX :: CbExt -> CbExt
+  ArrSetX :: CbExt -> CbExt -> CbExt -> CbExt 
+  ArrIdxX :: CbExt -> CbExt -> CbExt
   deriving (Show,Eq)
 
 -- Environment Definitions
@@ -78,11 +81,27 @@ type Store = [(Int, CbVal)] --maybe ...????
 useClosure :: String -> CbVal -> EnvVal -> EnvVal -> EnvVal
 useClosure i v e _ = (i,v):e
 
+alloc :: CbVal -> Store -> (Int, Store)
+alloc val store =
+  let addr = length store in (addr, store ++ [(addr, val)])
+
+deref :: Int -> Store -> Maybe CbVal
+deref addr store = lookup addr store
+
+set :: Int -> CbVal -> Store -> Maybe Store
+set addr val store =
+  case lookup addr store of
+    Nothing -> Nothing
+    Just _ -> Just (map (\(a,v) -> if a == addr then (a, val) else (a,v)) store)
+    
 --more boilerplate to edit; make sure these are actually CORRECT--
 typeof :: Cb -> Reader Cont CbTy
 typeof (Num x) = return TNum
 typeof (Bool x) = return TBool
-typeof (Arr xs) = return (typeof (head xs))
+typeof (Arr []) = fail "empty array"
+typeof (Arr xs) = do
+ t <- typeof (head xs)
+ return (TArr t)
 typeof (Id id) = do { cont <- ask;
   case lookup id cont of
     Just t -> return t
@@ -131,6 +150,9 @@ typeof (Leq l r) = do {l' <- (typeof l);
 typeof (Fix f) = do {(d :->: r) <- (typeof f);
   return r}
 typeof (While cond body) = fail "not implemented"
+typeof (NewArr xs) = fail "not implemented"
+typeof (ArrSet xs idx num)
+typeof (ArrIdx xs idx)
   
 elab :: CbExt -> Cb 
 elab (NumX x) = (Num x)
@@ -146,7 +168,9 @@ elab (BindX i t v b) = App (Lambda i t (elab b))(elab v)
 elab (IdX id) = (Id id)
 elab (IfX c t e) = If (elab c) (elab t) (elab e)
 elab (WhileX cond body) = (While (elab cond) (elab body))
---elab (LoopX cond var b) = (Fix (Lambda loop in (Lambda var in if (elab cond) then loop (var + 1) else var))) this is bullshit
+elab (NewArrX xs) = (NewArr (elab xs))
+elab (ArrSetX xs idx num) = (ArrSet (elab xs) (elab idx) (elab num))
+elab (ArrIdxX xs idx) = (ArrIdx (elab xs) (elab idx))
 
 eval :: Cb -> ReaderT EnvVal (StateT Store Maybe) CbVal
 eval (Num x) = return (NumV x)
@@ -203,8 +227,28 @@ eval (While cond body) = do
       (eval body)
       eval (While cond body) 
     else return UnitV
-eval (NewArr arr) = 
-eval (AppendArr arr num idx) --possibly make this an extension
-eval (PopArr arr idx) --possibly make this an extension
+eval (NewArr xs) = do
+  xs' <- eval xs
+  store <- lift get
+  let (addr, store') = alloc xs' store
+  lift (put store')
+  return (NumV addr)
+eval (ArrSet xs idx num) = do
+  (ArrV addr len) <- eval xs
+  (NumV idx') <- eval idx
+  (NumV num') <- eval num
+  case set (addr + idx') val store of
+    Just store' -> do
+      lift (put store')
+      return UnitV
+    Nothing -> fail "bad addr"
+eval (ArrIdx xs idx) = do
+  (ArrV addr len) <- eval xs
+  (NumV idx') <- eval idx
+  if idx' >= len then fail "indexerror" else do
+    store <- lift get
+    case deref (addr + idx') store of 
+      Just num -> return num
+      Nothing -> fail "indexerror"
 
 
