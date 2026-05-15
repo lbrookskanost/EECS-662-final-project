@@ -133,7 +133,7 @@ typeof (Exp l r) = do {l' <- (typeof l);
 typeof (Between l m r) = do {l' <- (typeof l);
   r' <- (typeof r);
   m' <- (typeof m);
-  (if (l'==TNum && r'==TNum && m'==TNum) then return TNum else fail "type fail in between")  }  
+  (if (l'==TNum && r'==TNum && m'==TNum) then return TBool else fail "type fail in between")  }  
 typeof (Lambda x t b) = do {
   b' <- local((x,t):) (typeof b);
   return (t :->: b')}  
@@ -162,8 +162,9 @@ typeof (Fix f) = do {(d :->: r) <- (typeof f);
     else fail "type fail in fix"}
 typeof (While cond body) = do 
   c' <- typeof cond
+  b' <- typeof body
   if c' == TBool
-    then typeof body
+    then return TUnit
     else fail "type fail in While"
 typeof (ArrSet xs idx num) = do
   (TArr t) <- typeof xs
