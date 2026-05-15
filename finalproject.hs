@@ -24,7 +24,6 @@ data Cb where
     IsZero :: Cb -> Cb 
     Fix :: Cb -> Cb
     While :: Cb -> Cb -> Cb
-    NewArr :: [Cb] -> Cb
     ArrSet :: Cb -> Cb -> Cb -> Cb
     ArrIdx :: Cb -> Cb -> Cb
     deriving (Show,Eq)
@@ -68,7 +67,6 @@ data CbExt where
   IsZeroX :: CbExt -> CbExt
   FixX :: CbExt -> CbExt
   WhileX :: CbExt -> CbExt -> CbExt
-  NewArrX :: [CbExt] -> CbExt
   ArrSetX :: CbExt -> CbExt -> CbExt -> CbExt 
   ArrIdxX :: CbExt -> CbExt -> CbExt
   deriving (Show,Eq)
@@ -108,8 +106,11 @@ typeof (Num x) = return TNum
 typeof (Bool x) = return TBool
 typeof (Arr []) = fail "empty array"
 typeof (Arr xs) = do
- t <- typeof (head xs)
- return (TArr t)
+  (TNum) <- typeof (head xs)
+  ts <- mapM typeof (tail xs)
+  if all (== TNum) ts
+    then return (TArr TNum)
+    else fail "arr elems must be integers"
 typeof (Id id) = do { cont <- ask;
   case lookup id cont of
     Just t -> return t
@@ -166,11 +167,6 @@ typeof (While cond body) = do
       typeof body
       return TUnit
   else fail "type fail in While"
-typeof (NewArr xs) = do
-  ts <- mapM typeof xs
-  if all (== TNum) ts
-    then return (TArr TNum)
-    else fail "arr elems must be integers"
 typeof (ArrSet xs idx num) = do
   (TArr t) <- typeof xs
   idx' <- typeof idx
@@ -189,6 +185,7 @@ typeof (ArrIdx xs idx) = do
 elab :: CbExt -> Cb 
 elab (NumX x) = (Num x)
 elab (BooleanX x) = Bool x
+elab (ArrX xs) = (Arr (map elab xs))
 elab (PlusX l r) = (Plus (elab l) (elab r))
 elab (MinusX l r) = (Minus (elab l) (elab r))
 elab (MultX l r) = (Mult (elab l) (elab r))
@@ -200,7 +197,6 @@ elab (BindX i t v b) = App (Lambda i t (elab b))(elab v)
 elab (IdX id) = (Id id)
 elab (IfX c t e) = If (elab c) (elab t) (elab e)
 elab (WhileX cond body) = (While (elab cond) (elab body))
-elab (NewArrX xs) = (NewArr (map elab xs))
 elab (ArrSetX xs idx num) = (ArrSet (elab xs) (elab idx) (elab num))
 elab (ArrIdxX xs idx) = (ArrIdx (elab xs) (elab idx))
 
@@ -209,7 +205,10 @@ eval (Num x) = return (NumV x)
 eval (Bool x) = return (BooleanV x)
 eval (Arr xs) = do
   nums <- mapM eval xs
-  return (ArrV 0 (length nums))
+  store <- lift get
+  let (addr, store') = allocArray nums store
+  lift (put store')
+  return (ArrV addr (length nums))
 eval (Id id) = do { env <- ask;
   case (lookup id env) of
     Just x -> return x
@@ -253,8 +252,12 @@ eval (Leq l r) = do {(NumV l') <- (eval l);
   return (BooleanV (l' <= r'))}
 eval (Fix f) = do 
   (ClosureV i t b e) <- (eval f)
-  let fixVal = ClosureV i t b ((i, fixVal):e)
-  local (const ((i, fixVal):e))(eval b)
+  case b of
+    Lambda n ty bd -> do
+      let recenv = (i, fixVal) : e
+          fixVal = ClosureV n ty bd recenv
+      return fixVal
+    _ -> fail "fix fail"
 eval (While cond body) = do 
   (BooleanV cond') <- eval cond
   if cond' 
@@ -262,26 +265,21 @@ eval (While cond body) = do
       (eval body)
       eval (While cond body) 
     else return UnitV
-eval (NewArr xs) = do
-  nums <- mapM eval xs
-  store <- lift get
-  let (addr, store') = allocArray nums store
-  lift (put store')
-  return (ArrV addr (length nums))
 eval (ArrSet xs idx num) = do
   (ArrV addr len) <- eval xs
   (NumV idx') <- eval idx
   num' <- eval num
-  store <- lift get
-  case set (addr + idx') num' store of
-    Just store' -> do
-      lift (put store')
-      return UnitV
-    Nothing -> fail "bad addr"
+  if idx' >= len || idx' < 0 then fail "indexerror" else do
+    store <- lift get
+    case set (addr + idx') num' store of
+      Just store' -> do
+        lift (put store')
+        return UnitV
+      Nothing -> fail "bad addr"
 eval (ArrIdx xs idx) = do
   (ArrV addr len) <- eval xs
   (NumV idx') <- eval idx
-  if idx' >= len then fail "indexerror" else do
+  if idx' >= len || idx' < 0 then fail "indexerror" else do
     store <- lift get
     case deref (addr + idx') store of 
       Just num -> return num
