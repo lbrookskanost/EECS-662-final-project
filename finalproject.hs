@@ -163,10 +163,8 @@ typeof (Fix f) = do {(d :->: r) <- (typeof f);
 typeof (While cond body) = do 
   c' <- typeof cond
   if c' == TBool
-    then do
-      typeof body
-      return TUnit
-  else fail "type fail in While"
+    then typeof body
+    else fail "type fail in While"
 typeof (ArrSet xs idx num) = do
   (TArr t) <- typeof xs
   idx' <- typeof idx
@@ -194,6 +192,12 @@ elab (ExpX b e) = (Exp (elab b) (elab e))
 elab (LambdaX i t b) = (Lambda i t (elab b))
 elab (AppX f a) = (App (elab f) (elab a)) 
 elab (BindX i t v b) = App (Lambda i t (elab b))(elab v) 
+elab (FixX f) = Fix (elab f)
+elab (BetweenX l m r) = Between (elab l) (elab m) (elab r)
+elab (AndX l r) = And (elab l) (elab r) 
+elab (OrX l r) = Or (elab l) (elab r)   
+elab (LeqX l r) = Leq (elab l) (elab r) 
+elab (IsZeroX x) = IsZero (elab x)       
 elab (IdX id) = (Id id)
 elab (IfX c t e) = If (elab c) (elab t) (elab e)
 elab (WhileX cond body) = (While (elab cond) (elab body))
